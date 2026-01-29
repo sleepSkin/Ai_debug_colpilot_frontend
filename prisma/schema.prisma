@@ -1,0 +1,50 @@
+// 职责说明：定义 Next 侧数据库模型，用于会话与调试结果持久化。
+// 调用链：Next API Routes -> Prisma Client -> PostgreSQL
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Session {
+  id        String   @id @default(uuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  userId    String?
+  title     String?
+
+  messages Message[]
+}
+
+model Message {
+  id             String      @id @default(uuid())
+  sessionId      String
+  role           String
+  language       String
+  errorText      String
+  codeSnippet    String
+  assistantJson  Json?
+  rawModelOutput String?
+  createdAt      DateTime    @default(now())
+
+  session     Session     @relation(fields: [sessionId], references: [id])
+  debugResult DebugResult?
+}
+
+model DebugResult {
+  messageId      String   @id
+  errorType      String
+  rootCause      String[]
+  fixSuggestions String[]
+  prevention     String[]
+  rawModelOutput String?
+  modelName      String?
+  promptVersion  String?
+  createdAt      DateTime @default(now())
+
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+}
