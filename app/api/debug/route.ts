@@ -1,6 +1,6 @@
 // 职责说明：调度推理调用并在事务中落库，同时返回结构化调试结果。
 // 调用链：UI -> /api/debug -> FastAPI /debug -> Prisma $transaction -> PostgreSQL
-
+// 输出
 import { NextResponse } from "next/server";
 
 import { prisma } from "@/lib/prisma";
