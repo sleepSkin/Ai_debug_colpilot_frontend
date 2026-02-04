@@ -8,10 +8,8 @@ import { prisma } from "@/lib/prisma";
 export const runtime = "nodejs";
 
 type DebugRequestBody = {
-  language?: unknown;
-  errorText?: unknown;
-  codeSnippet?: unknown;
-  session_id?: unknown;
+  input?: unknown;
+  sessionId?: unknown;
 };
 
 type FastApiResponse = {
@@ -36,6 +34,20 @@ function toStringArray(value: unknown): string[] {
   return value.map((item) => String(item));
 }
 
+function toTrimmedString(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function pickFirstString(value: Record<string, unknown>, keys: string[]): string {
+  for (const key of keys) {
+    const candidate = value[key];
+    if (typeof candidate === "string" && candidate.trim()) {
+      return candidate.trim();
+    }
+  }
+  return "";
+}
+
 /**
  * 说明：接收调试请求，调用 FastAPI 推理并使用事务写入会话相关数据。
  * 输入：JSON body（language、errorText、codeSnippet、可选 session_id）。
@@ -53,42 +65,64 @@ export async function POST(req: Request) {
     }
 
     const body = (await req.json()) as DebugRequestBody;
-    const language = String(body?.language ?? "").trim();
-    const errorText = String(body?.errorText ?? "").trim();
-    const codeSnippet = String(body?.codeSnippet ?? "").trim();
+    const input = toTrimmedString(body?.input);
     const sessionIdInput =
-      typeof body?.session_id === "string" ? body.session_id.trim() : "";
+      typeof body?.sessionId === "string" ? body.sessionId.trim() : "";
 
-    if (!language || !errorText || !codeSnippet) {
+    if (!input) {
       return NextResponse.json(
         { error: "Invalid request body" },
         { status: 400 }
       );
     }
 
-    const fastapiResp = await fetch(
-      `${fastapiBaseUrl.replace(/\/$/, "")}/debug`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ language, errorText, codeSnippet }),
-      }
-    );
+    const baseUrl = fastapiBaseUrl.replace(/\/$/, "");
+    console.log("FASTAPI_BASE_URL=", process.env.FASTAPI_BASE_URL);
+    console.log("parse url =", `${process.env.FASTAPI_BASE_URL}/parse`);
+    const parseResp = await fetch(`${baseUrl}/parse`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ raw_input: input }),
+    });
 
-    const fastapiText = await fastapiResp.text();
-    if (!fastapiResp.ok) {
+    const parseText = await parseResp.text();
+    if (!parseResp.ok) {
       return NextResponse.json(
-        { error: "FastAPI error", detail: fastapiText },
+        { error: "FastAPI parse error", detail: parseText },
         { status: 502 }
       );
     }
 
-    let fastapiJson: FastApiResponse;
+    let parsed: Record<string, unknown>;
     try {
-      fastapiJson = JSON.parse(fastapiText) as FastApiResponse;
+      parsed = JSON.parse(parseText) as Record<string, unknown>;
     } catch (e: any) {
       return NextResponse.json(
-        { error: "FastAPI response parse error", detail: String(e?.message ?? e) },
+        { error: "FastAPI parse response parse error", detail: String(e?.message ?? e) },
+        { status: 502 }
+      );
+    }
+
+    const debugResp = await fetch(`${baseUrl}/debug`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ raw_input: input, parsed }),
+    });
+
+    const debugText = await debugResp.text();
+    if (!debugResp.ok) {
+      return NextResponse.json(
+        { error: "FastAPI debug error", detail: debugText },
+        { status: 502 }
+      );
+    }
+
+    let debugJson: FastApiResponse;
+    try {
+      debugJson = JSON.parse(debugText) as FastApiResponse;
+    } catch (e: any) {
+      return NextResponse.json(
+        { error: "FastAPI debug response parse error", detail: String(e?.message ?? e) },
         { status: 502 }
       );
     }
@@ -113,13 +147,22 @@ export async function POST(req: Request) {
         sessionIdValue = created.id;
       }
 
+      const language = pickFirstString(parsed, ["language", "lang"]) || "unknown";
+      const codeSnippet = pickFirstString(parsed, [
+        "code_snippet",
+        "code",
+        "snippet",
+        "related_code",
+      ]);
+
       await tx.message.create({
         data: {
           sessionId: sessionIdValue,
           role: "user",
           language,
-          errorText,
+          errorText: input,
           codeSnippet,
+          assistantJson: { parsed },
         },
       });
 
@@ -128,34 +171,34 @@ export async function POST(req: Request) {
           sessionId: sessionIdValue,
           role: "assistant",
           language,
-          errorText,
+          errorText: input,
           codeSnippet,
-          assistantJson: fastapiJson,
+          assistantJson: debugJson,
           rawModelOutput:
-            typeof fastapiJson.raw_model_output === "string"
-              ? fastapiJson.raw_model_output
-              : null,
+            typeof debugJson.raw_model_output === "string"
+              ? debugJson.raw_model_output
+              : debugText,
         },
       });
 
       await tx.debugResult.create({
         data: {
           messageId: assistantMessage.id,
-          errorType: String(fastapiJson.error_type ?? ""),
-          rootCause: toStringArray(fastapiJson.root_cause),
-          fixSuggestions: toStringArray(fastapiJson.fix_suggestions),
-          prevention: toStringArray(fastapiJson.prevention),
+          errorType: String(debugJson.error_type ?? ""),
+          rootCause: toStringArray(debugJson.root_cause),
+          fixSuggestions: toStringArray(debugJson.fix_suggestions),
+          prevention: toStringArray(debugJson.prevention),
           rawModelOutput:
-            typeof fastapiJson.raw_model_output === "string"
-              ? fastapiJson.raw_model_output
-              : null,
+            typeof debugJson.raw_model_output === "string"
+              ? debugJson.raw_model_output
+              : debugText,
           modelName:
-            typeof fastapiJson.model_name === "string"
-              ? fastapiJson.model_name
+            typeof debugJson.model_name === "string"
+              ? debugJson.model_name
               : null,
           promptVersion:
-            typeof fastapiJson.prompt_version === "string"
-              ? fastapiJson.prompt_version
+            typeof debugJson.prompt_version === "string"
+              ? debugJson.prompt_version
               : null,
         },
       });
@@ -168,7 +211,14 @@ export async function POST(req: Request) {
       return sessionIdValue;
     });
 
-    return NextResponse.json(fastapiJson, {
+    const responsePayload = {
+      error_type: String(debugJson.error_type ?? ""),
+      root_cause: toStringArray(debugJson.root_cause),
+      fix_suggestions: toStringArray(debugJson.fix_suggestions),
+      prevention: toStringArray(debugJson.prevention),
+    };
+
+    return NextResponse.json(responsePayload, {
       status: 200,
       headers: { "X-Session-Id": sessionId },
     });

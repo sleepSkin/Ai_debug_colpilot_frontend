@@ -6,9 +6,7 @@ import ResultCard from "../components/ResultCard";
 import type { DebugRequest, DebugResponse } from "../lib/types";
 
 export default function Home() {
-  const [language, setLanguage] = useState("ts");
-  const [errorText, setErrorText] = useState("TypeError: xxx is not a function");
-  const [codeSnippet, setCodeSnippet] = useState("const a=b()");
+  const [input, setInput] = useState("");
   const [result, setResult] = useState<DebugResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -19,7 +17,7 @@ export default function Home() {
     setResult(null);
 
     try {
-      const payload: DebugRequest = { language, errorText, codeSnippet };
+      const payload: DebugRequest = { input };
       const resp = await fetch("/api/debug", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -127,45 +125,14 @@ export default function Home() {
             <h2 style={{ marginTop: 0, marginBottom: 16, fontSize: 22 }}>Context</h2>
             <div style={{ display: "grid", gap: 14 }}>
               <label style={{ display: "grid", gap: 8, fontSize: 14 }}>
-                Language
-                <input
-                  value={language}
-                  onChange={(e) => setLanguage(e.target.value)}
-                  style={{
-                    width: "100%",
-                    padding: "10px 12px",
-                    borderRadius: 10,
-                    border: "1px solid #e2e8f0",
-                    background: "#f8fafc",
-                    color: "#0f172a",
-                  }}
-                />
-              </label>
-
-              <label style={{ display: "grid", gap: 8, fontSize: 14 }}>
-                Error Text
+                Input
                 <textarea
-                  value={errorText}
-                  onChange={(e) => setErrorText(e.target.value)}
-                  rows={4}
-                  style={{
-                    width: "100%",
-                    padding: "10px 12px",
-                    borderRadius: 10,
-                    border: "1px solid #e2e8f0",
-                    background: "#f8fafc",
-                    color: "#0f172a",
-                    resize: "vertical",
-                  }}
-                />
-              </label>
-
-              <label style={{ display: "grid", gap: 8, fontSize: 14 }}>
-                Code Snippet
-                <textarea
-                  value={codeSnippet}
-                  onChange={(e) => setCodeSnippet(e.target.value)}
-                  rows={7}
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  placeholder={
+                    "支持一次性粘贴报错/堆栈/代码"
+                  }
+                  rows={10}
                   style={{
                     width: "100%",
                     padding: "12px",
@@ -180,24 +147,28 @@ export default function Home() {
               </label>
             </div>
 
-            <button
-              onClick={onSubmit}
-              disabled={loading}
-              style={{
-                marginTop: 18,
-                width: "100%",
-                padding: "12px 16px",
-                borderRadius: 12,
-                border: "1px solid rgba(109, 94, 252, 0.6)",
-                background: loading ? "#edeaff" : "linear-gradient(120deg, #6d5efc, #8b7bff)",
-                color: loading ? "#6b5cff" : "#ffffff",
-                fontWeight: 600,
-                fontSize: 15,
-                cursor: loading ? "not-allowed" : "pointer",
-              }}
-            >
-              {loading ? "Analyzing..." : "Analyze"}
-            </button>
+            <div style={{ marginTop: 18, display: "flex", alignItems: "center", gap: 12 }}>
+              <button
+                onClick={onSubmit}
+                disabled={loading}
+                style={{
+                  flex: 1,
+                  padding: "12px 16px",
+                  borderRadius: 12,
+                  border: "1px solid rgba(109, 94, 252, 0.6)",
+                  background: loading ? "#edeaff" : "linear-gradient(120deg, #6d5efc, #8b7bff)",
+                  color: loading ? "#6b5cff" : "#ffffff",
+                  fontWeight: 600,
+                  fontSize: 15,
+                  cursor: loading ? "not-allowed" : "pointer",
+                }}
+              >
+                {loading ? "Analyzing..." : "Analyze"}
+              </button>
+              <span style={{ fontSize: 12, color: "rgba(71, 85, 105, 0.8)", maxWidth: 220 }}>
+                支持一次性粘贴。系统会自动提取语言、堆栈与代码片段。
+              </span>
+            </div>
 
             {err && (
               <pre

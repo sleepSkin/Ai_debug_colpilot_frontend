@@ -1,8 +1,6 @@
 export type DebugRequest = {
-  language: string;
-  errorText: string;
-  codeSnippet: string;
-  session_id?: string;
+  input: string;
+  sessionId?: string;
 };
 
 export type DebugResponse = {
