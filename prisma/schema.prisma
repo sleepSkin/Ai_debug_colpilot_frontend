@@ -11,32 +11,46 @@ datasource db {
 }
 
 model Session {
-  id        String   @id @default(uuid())
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  userId    String?
-  title     String?
+  id               String   @id @default(uuid())
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  userId           String?
+  title            String?
+  lastStatus       String?
+  lastRoundIndex   Int      @default(0)
+  lastErrorMessage String?
 
   messages Message[]
+  stepAttempts StepAttempt[]
 }
 
 model Message {
   id             String      @id @default(uuid())
   sessionId      String
   role           String
+  roundIndex     Int?
   language       String
   errorText      String
   codeSnippet    String
   assistantJson  Json?
   rawModelOutput String?
+  status         String      @default("success")
+  errorCode      String?
+  errorMessage   String?
+  schemaVersion  String?
+  metadata       Json?
   createdAt      DateTime    @default(now())
 
   session     Session     @relation(fields: [sessionId], references: [id])
   debugResult DebugResult?
+
+  @@index([sessionId, roundIndex, role])
 }
 
 model DebugResult {
   messageId      String   @id
+  sessionId      String?
+  roundIndex     Int?
   errorType      String
   rootCause      String[]
   fixSuggestions String[]
@@ -44,7 +58,34 @@ model DebugResult {
   rawModelOutput String?
   modelName      String?
   promptVersion  String?
+  status         String   @default("success")
+  errorCode      String?
+  errorMessage   String?
+  schemaVersion  String?
+  metadata       Json?
   createdAt      DateTime @default(now())
 
   message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId, roundIndex])
+}
+
+model StepAttempt {
+  id           String   @id @default(uuid())
+  sessionId    String
+  roundIndex   Int
+  stepType     String
+  attempt      Int      @default(1)
+  status       String
+  errorCode    String?
+  errorMessage String?
+  requestId    String
+  durationMs   Int?
+  payloadIn    Json?
+  payloadOut   Json?
+  createdAt    DateTime @default(now())
+
+  session Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId, roundIndex, stepType, attempt])
 }
